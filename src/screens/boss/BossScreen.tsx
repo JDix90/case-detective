@@ -1,0 +1,325 @@
+import { useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useGameStore } from '../../store/gameStore';
+import { generateQuestion, type GeneratedQuestion } from '../../lib/questionGenerator';
+import { createMasteryRecord, updateMasteryRecord, enqueueFromEvent } from '../../lib/adaptiveEngine';
+import { isConfusionPair } from '../../data/confusionPairs';
+import {
+  createBossState, computeDamage, computeHeal, applyDamage, applyHeal,
+  advanceRound, addTeamScore, incrementStreak, getMvpTeam, isWeaknessHit,
+  type BossState,
+} from '../../lib/bossEngine';
+import { defaultBossBattleConfig } from '../../data/gameConfigs';
+import { AnswerButton } from '../../components/ui/AnswerButton';
+import { BossHealthBar } from '../../components/ui/BossHealthBar';
+import { StreakDisplay } from '../../components/ui/StreakDisplay';
+import { caseMetadata } from '../../data/caseMetadata';
+import type { SessionAnswerEvent, SessionSummary, BossBattleConfig, CaseId } from '../../types';
+
+const TEAMS = ['Team A', 'Team B', 'Team C', 'Team D'];
+const BOSS_NAMES = ['Падежный Дракон', 'Граммар Горгона', 'Склонение Сфинкс'];
+const BOSS_EMOJIS = ['🐉', '🦎', '🦁'];
+
+type Phase = 'setup' | 'question' | 'feedback' | 'complete';
+
+export function BossScreen() {
+  const navigate = useNavigate();
+  const { settings, masteryRecords, adaptiveQueue, updateMasteryRecord: storeMastery, setAdaptiveQueue, addSessionSummary } = useGameStore();
+
+  const [phase, setPhase] = useState<Phase>('setup');
+  const [teamCount, setTeamCount] = useState(2);
+  const [weaknessCaseId, setWeaknessCaseId] = useState<string>('');
+  const [bossState, setBossState] = useState<BossState>(createBossState(defaultBossBattleConfig));
+  const [config, setConfig] = useState<BossBattleConfig>(defaultBossBattleConfig);
+  const [question, setQuestion] = useState<GeneratedQuestion | null>(null);
+  const [answerState, setAnswerState] = useState<('default' | 'correct' | 'wrong' | 'disabled')[]>(['default', 'default', 'default', 'default']);
+  const [currentTeamIdx, setCurrentTeamIdx] = useState(0);
+  const [lastDamage, setLastDamage] = useState<number | null>(null);
+  const [lastHeal, setLastHeal] = useState<number | null>(null);
+  const [events, setEvents] = useState<SessionAnswerEvent[]>([]);
+  const [localQueue, setLocalQueue] = useState(adaptiveQueue);
+  const [localMastery, setLocalMastery] = useState(masteryRecords);
+  const [bossName] = useState(() => BOSS_NAMES[Math.floor(Math.random() * BOSS_NAMES.length)]);
+  const [bossEmoji] = useState(() => BOSS_EMOJIS[Math.floor(Math.random() * BOSS_EMOJIS.length)]);
+  const presentedAtRef = useRef<number>(0);
+  const usedIds = useRef<string[]>([]);
+
+  const categories = settings.activeCategories;
+
+  const loadNextQuestion = useCallback(() => {
+    const q = generateQuestion('boss_battle', settings.difficulty, undefined, usedIds.current.slice(-8), undefined, categories);
+    if (q) {
+      usedIds.current = [...usedIds.current, q.template.id].slice(-20);
+      setQuestion(q);
+      setAnswerState(['default', 'default', 'default', 'default']);
+      setLastDamage(null);
+      setLastHeal(null);
+      presentedAtRef.current = Date.now();
+    }
+  }, [settings.difficulty, categories]);
+
+  const handleStart = () => {
+    const cfg: BossBattleConfig = { ...defaultBossBattleConfig };
+    if (weaknessCaseId) cfg.weaknessCaseId = weaknessCaseId as CaseId;
+    setConfig(cfg);
+
+    const teams: Record<string, number> = {};
+    for (let i = 0; i < teamCount; i++) teams[TEAMS[i]] = 0;
+    const state = createBossState(cfg);
+    state.teamScores = teams;
+    setBossState(state);
+    setPhase('question');
+    loadNextQuestion();
+  };
+
+  const handleAnswer = (choice: string, idx: number) => {
+    if (phase !== 'question' || !question) return;
+
+    const answeredAt = Date.now(); // eslint-disable-line react-hooks/purity
+    const responseMs = answeredAt - presentedAtRef.current;
+    const isCorrect = choice === question.template.correctAnswer ||
+      (question.template.acceptedAnswers?.includes(choice) ?? false);
+
+    const newStates: ('default' | 'correct' | 'wrong' | 'disabled')[] = question.choices.map((c, i) => {
+      if (c === question.template.correctAnswer) return 'correct';
+      if (i === idx && !isCorrect) return 'wrong';
+      return 'disabled';
+    });
+    setAnswerState(newStates);
+
+    const teamId = TEAMS[currentTeamIdx];
+    let newBossState = { ...bossState };
+
+    if (isCorrect) {
+      const weakHit = isWeaknessHit(question.template.targetCaseId, config.weaknessCaseId);
+      const isContrast = question.template.tags.includes('contrast');
+      const dmg = computeDamage(
+        config,
+        bossState.teamStreak,
+        responseMs,
+        settings.difficulty,
+        weakHit,
+        isContrast
+      );
+      setLastDamage(dmg);
+      newBossState = applyDamage(incrementStreak(newBossState), dmg);
+      let pts = 100;
+      if (responseMs <= 3000) pts += 20;
+      if (weakHit) pts += 20;
+      newBossState = addTeamScore(newBossState, teamId, pts);
+    } else {
+      const cpMatch = isConfusionPair(choice, question.template.correctAnswer);
+      const heal = computeHeal(config, !!cpMatch, responseMs);
+      setLastHeal(heal);
+      newBossState = applyHeal(newBossState, heal);
+    }
+
+    newBossState = advanceRound(newBossState, config);
+    setBossState(newBossState);
+
+    const formKey = `${question.template.targetLemmaId}:${question.template.targetCaseId}:${question.template.correctAnswer}`;
+    const event: SessionAnswerEvent = {
+      questionId: question.template.id,
+      presentedAtMs: presentedAtRef.current,
+      answeredAtMs: answeredAt,
+      responseMs,
+      selectedAnswer: choice,
+      correctAnswer: question.template.correctAnswer,
+      wasCorrect: isCorrect,
+      targetCaseId: question.template.targetCaseId,
+      targetLemmaId: question.template.targetLemmaId,
+      modeId: 'boss_battle',
+      usedHint: false,
+    };
+
+    const allEvents = [...events, event];
+    setEvents(allEvents);
+
+    const existing = localMastery[formKey] ?? createMasteryRecord(formKey);
+    const updated = updateMasteryRecord(existing, event);
+    const newMastery = { ...localMastery, [formKey]: updated };
+    setLocalMastery(newMastery);
+    storeMastery(updated);
+    const newQueue = enqueueFromEvent(localQueue, event, updated);
+    setLocalQueue(newQueue);
+    setAdaptiveQueue(newQueue);
+
+    if (newBossState.isDefeated || newBossState.isLost) {
+      setTimeout(() => {
+        const summary: SessionSummary = {
+          id: Date.now().toString(),
+          modeId: 'boss_battle',
+          score: Object.values(newBossState.teamScores).reduce((a, b) => a + b, 0),
+          accuracy: allEvents.length > 0 ? allEvents.filter(e => e.wasCorrect).length / allEvents.length : 0,
+          averageResponseMs: allEvents.length > 0 ? allEvents.reduce((s, e) => s + e.responseMs, 0) / allEvents.length : 0,
+          totalQuestions: allEvents.length,
+          correctAnswers: allEvents.filter(e => e.wasCorrect).length,
+          bestStreak: newBossState.teamStreak,
+          weakForms: [],
+          confusionPairsHit: [],
+          completedAt: new Date().toISOString(),
+          categories,
+        };
+        addSessionSummary(summary);
+        setPhase('complete');
+      }, 1500);
+    } else {
+      setCurrentTeamIdx(i => (i + 1) % teamCount);
+      setTimeout(() => loadNextQuestion(), 1200);
+    }
+    setPhase('feedback');
+  };
+
+  if (phase === 'setup') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center px-4 gap-8">
+        <div className="text-center space-y-2">
+          <div className="text-6xl">{bossEmoji}</div>
+          <h1 className="text-3xl font-bold text-white">⚔️ Boss Battle</h1>
+          <p className="text-slate-400">Team vs. Boss — Deal damage with correct answers!</p>
+        </div>
+
+        <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 w-full max-w-sm space-y-5">
+          <div>
+            <label className="text-slate-300 text-sm font-semibold block mb-2">Number of Teams</label>
+            <div className="flex gap-3">
+              {[2, 3, 4].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setTeamCount(n)}
+                  className={`flex-1 py-2 rounded-xl font-bold transition-colors ${teamCount === n ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-slate-300 text-sm font-semibold block mb-2">Boss Weakness (optional)</label>
+            <select
+              value={weaknessCaseId}
+              onChange={e => setWeaknessCaseId(e.target.value)}
+              className="w-full bg-slate-700 border border-slate-600 text-white rounded-xl px-3 py-2"
+            >
+              <option value="">No weakness</option>
+              {Object.values(caseMetadata).map(m => (
+                <option key={m.id} value={m.id}>{m.icon} {m.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={handleStart}
+            className="w-full py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-lg transition-colors"
+          >
+            Start Battle!
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'complete') {
+    const mvp = getMvpTeam(bossState);
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center px-4 gap-6">
+        <div className="text-center space-y-2">
+          <div className="text-6xl">{bossState.isDefeated ? '🏆' : '💀'}</div>
+          <h1 className="text-3xl font-bold text-white">
+            {bossState.isDefeated ? 'Boss Defeated!' : 'Boss Wins!'}
+          </h1>
+        </div>
+        <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 w-full max-w-sm space-y-4">
+          {mvp && <p className="text-center text-yellow-400 font-bold">🏅 MVP: {mvp}</p>}
+          <div className="space-y-2">
+            {Object.entries(bossState.teamScores).map(([team, pts]) => (
+              <div key={team} className="flex justify-between text-sm">
+                <span className="text-slate-300">{team}</span>
+                <span className="text-white font-bold">{pts.toLocaleString()} pts</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-slate-400 text-sm text-center">Round {bossState.round}</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={() => navigate('/')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold">Home</button>
+          <button onClick={() => window.location.reload()} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-semibold">Play Again</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="bg-slate-900 border-b border-slate-800 px-4 py-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white">✕</button>
+            <span className="text-white font-bold">⚔️ Boss Battle — Round {bossState.round}</span>
+          </div>
+          <StreakDisplay streak={bossState.teamStreak} />
+        </div>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+        <div className="bg-slate-800 rounded-2xl border border-red-900 p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <span className="text-4xl">{bossEmoji}</span>
+            <div className="flex-1">
+              <p className="text-red-300 font-bold">{bossName}</p>
+              <BossHealthBar hp={bossState.hp} maxHp={bossState.maxHp} shieldHp={bossState.shieldHp} />
+            </div>
+            {lastDamage !== null && (
+              <div className="text-green-400 font-bold text-xl animate-bounce">-{lastDamage}</div>
+            )}
+            {lastHeal !== null && (
+              <div className="text-red-400 font-bold text-xl animate-bounce">+{lastHeal} 💊</div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          {Object.entries(bossState.teamScores).map(([team, pts], i) => (
+            <div
+              key={team}
+              className={`flex-1 rounded-xl p-2 text-center border-2 transition-colors ${currentTeamIdx === i ? 'border-blue-400 bg-blue-950' : 'border-slate-700 bg-slate-800'}`}
+            >
+              <p className="text-xs text-slate-400">{team}</p>
+              <p className="text-white font-bold">{pts.toLocaleString()}</p>
+              {currentTeamIdx === i && <p className="text-blue-400 text-xs">&larr; Turn</p>}
+            </div>
+          ))}
+        </div>
+
+        {question && (
+          <>
+            <div className="bg-slate-800 rounded-2xl border border-slate-600 p-6 text-center">
+              <p className="text-3xl font-bold text-white">{question.template.prompt}</p>
+              {settings.showHelperWords && (
+                <p className="text-slate-400 text-sm mt-2">Helper: {question.template.helperWord}</p>
+              )}
+              {config.weaknessCaseId && question.template.targetCaseId === config.weaknessCaseId && (
+                <p className="text-yellow-400 text-xs mt-1">⚡ Weakness hit! +3 bonus damage</p>
+              )}
+            </div>
+
+            {(phase === 'question' || phase === 'feedback') && (
+              <div className="grid grid-cols-2 gap-3">
+                {question.choices.map((choice, idx) => (
+                  <AnswerButton
+                    key={choice}
+                    label={choice}
+                    index={idx}
+                    onClick={() => handleAnswer(choice, idx)}
+                    state={answerState[idx]}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
