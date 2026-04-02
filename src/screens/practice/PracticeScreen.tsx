@@ -35,11 +35,19 @@ export function PracticeScreen() {
   const categories = settings.activeCategories;
 
   const loadNextQuestion = useCallback(() => {
+    const confusionCounts: Record<string, number> = {};
+    for (const record of Object.values(localMastery)) {
+      if (record.confusionWith.length > 0) {
+        confusionCounts[record.formKey] = record.confusionWith.length;
+      }
+    }
+
     const adaptiveFormKey = selectNextAdaptiveFormKey(
       localQueue,
       localMastery,
       recentFormKeys,
-      {}
+      confusionCounts,
+      categories
     );
 
     let q: GeneratedQuestion | null = null;
@@ -161,7 +169,7 @@ export function PracticeScreen() {
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white">✕</button>
+            <button onClick={() => navigate('/home')} className="text-slate-400 hover:text-white">✕</button>
             <span className="text-white font-bold">🎯 Practice</span>
           </div>
           <div className="flex items-center gap-3">

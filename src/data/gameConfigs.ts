@@ -9,6 +9,7 @@ export const defaultBossBattleConfig: BossBattleConfig = {
   shieldEveryRounds: 5,
   shieldBase: 8,
   weaknessCaseId: undefined,
+  maxRounds: 15,
 };
 
 export const defaultGridChallengeConfig: GridChallengeConfig = {

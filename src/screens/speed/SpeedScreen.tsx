@@ -192,7 +192,7 @@ export function SpeedScreen() {
           </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => navigate('/')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold transition-colors">
+          <button onClick={() => navigate('/home')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold transition-colors">
             Home
           </button>
           <button onClick={() => window.location.reload()} className="px-6 py-3 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl font-semibold transition-colors">
@@ -208,7 +208,7 @@ export function SpeedScreen() {
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white">✕</button>
+            <button onClick={() => navigate('/home')} className="text-slate-400 hover:text-white">✕</button>
             <span className="text-white font-bold">⚡ Speed Round</span>
           </div>
           <div className="flex items-center gap-3">

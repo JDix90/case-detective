@@ -100,9 +100,10 @@ export function advanceRound(
   }
 
   // Check loss condition
-  const maxRounds = 15;
-  if (updated.round > maxRounds) {
-    if (!updated.suddenDeathActive && state.hp <= 15) {
+  if (updated.round > config.maxRounds) {
+    if (updated.suddenDeathActive) {
+      // Already in sudden death -- battle continues until boss is defeated
+    } else if (state.hp <= 15) {
       updated.suddenDeathActive = true;
     } else {
       updated.isLost = true;

@@ -1,3 +1,15 @@
+export type UserRole = 'teacher' | 'student' | 'admin';
+
+/** Public registration only allows student or teacher. */
+export type SignUpRole = Exclude<UserRole, 'admin'>;
+
+export interface UserProfile {
+  id: string;
+  role: UserRole;
+  displayName: string;
+  email: string;
+}
+
 export type CaseId =
   | 'nominative'
   | 'genitive'
@@ -49,6 +61,8 @@ export interface DeclensionForm {
   notes?: string;
   afterPreposition?: boolean;
   acceptedVariants?: string[];
+  postPrepositionForm?: string;
+  postPrepositionVariants?: string[];
 }
 
 /** @deprecated Use DeclensionForm instead. */
@@ -126,7 +140,7 @@ export interface AdaptiveReviewQueueItem {
   priorityScore: number;
   scheduledAfterQuestions: number;
   questionsSinceEnqueue: number;
-  source: 'wrong_answer' | 'slow_correct' | 'confusion_pair' | 'mastery_gap';
+  source: 'wrong_answer' | 'slow_correct' | 'confusion_pair' | 'mastery_gap' | 'stale_review';
 }
 
 export interface BossBattleConfig {
@@ -138,6 +152,7 @@ export interface BossBattleConfig {
   shieldEveryRounds: number;
   shieldBase: number;
   weaknessCaseId?: CaseId;
+  maxRounds: number;
 }
 
 export interface GridChallengeConfig {
@@ -194,4 +209,5 @@ export interface SentenceFrame {
   questionPrompt: string;
   explanation: string;
   difficulty: DifficultyId;
+  requiresPreposition?: boolean;
 }

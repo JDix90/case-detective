@@ -14,7 +14,7 @@ export function GameHeader({ title, subtitle, onQuit, rightSlot }: GameHeaderPro
     if (onQuit) {
       onQuit();
     } else {
-      navigate('/');
+      navigate('/home');
     }
   };
 

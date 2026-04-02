@@ -43,6 +43,7 @@ export function BossScreen() {
   const [bossEmoji] = useState(() => BOSS_EMOJIS[Math.floor(Math.random() * BOSS_EMOJIS.length)]);
   const presentedAtRef = useRef<number>(0);
   const usedIds = useRef<string[]>([]);
+  const bestStreakRef = useRef(0);
 
   const categories = settings.activeCategories;
 
@@ -103,6 +104,7 @@ export function BossScreen() {
       );
       setLastDamage(dmg);
       newBossState = applyDamage(incrementStreak(newBossState), dmg);
+      bestStreakRef.current = Math.max(bestStreakRef.current, newBossState.teamStreak);
       let pts = 100;
       if (responseMs <= 3000) pts += 20;
       if (weakHit) pts += 20;
@@ -145,6 +147,7 @@ export function BossScreen() {
     setAdaptiveQueue(newQueue);
 
     if (newBossState.isDefeated || newBossState.isLost) {
+      setPhase('feedback');
       setTimeout(() => {
         const summary: SessionSummary = {
           id: Date.now().toString(),
@@ -154,7 +157,7 @@ export function BossScreen() {
           averageResponseMs: allEvents.length > 0 ? allEvents.reduce((s, e) => s + e.responseMs, 0) / allEvents.length : 0,
           totalQuestions: allEvents.length,
           correctAnswers: allEvents.filter(e => e.wasCorrect).length,
-          bestStreak: newBossState.teamStreak,
+          bestStreak: bestStreakRef.current,
           weakForms: [],
           confusionPairsHit: [],
           completedAt: new Date().toISOString(),
@@ -164,10 +167,13 @@ export function BossScreen() {
         setPhase('complete');
       }, 1500);
     } else {
+      setPhase('feedback');
       setCurrentTeamIdx(i => (i + 1) % teamCount);
-      setTimeout(() => loadNextQuestion(), 1200);
+      setTimeout(() => {
+        loadNextQuestion();
+        setPhase('question');
+      }, 1200);
     }
-    setPhase('feedback');
   };
 
   if (phase === 'setup') {
@@ -243,7 +249,7 @@ export function BossScreen() {
           <p className="text-slate-400 text-sm text-center">Round {bossState.round}</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => navigate('/')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold">Home</button>
+          <button onClick={() => navigate('/home')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold">Home</button>
           <button onClick={() => window.location.reload()} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-semibold">Play Again</button>
         </div>
       </div>
@@ -255,7 +261,7 @@ export function BossScreen() {
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white">✕</button>
+            <button onClick={() => navigate('/home')} className="text-slate-400 hover:text-white">✕</button>
             <span className="text-white font-bold">⚔️ Boss Battle — Round {bossState.round}</span>
           </div>
           <StreakDisplay streak={bossState.teamStreak} />

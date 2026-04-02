@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { caseMetadata, caseOrder } from '../../data/caseMetadata';
 import { useGameStore } from '../../store/gameStore';
@@ -17,7 +17,19 @@ export function LearnScreen() {
   const [hoveredCase, setHoveredCase] = useState<CaseId | null>(null);
   const [hoveredLemma, setHoveredLemma] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ caseId: CaseId; lemmaId: string } | null>(null);
-  const [activeCategory, setActiveCategory] = useState<WordCategory>('pronoun');
+
+  const allowedCategories = useMemo(() => {
+    const a = settings.activeCategories;
+    return a.length > 0 ? a : (['pronoun'] as WordCategory[]);
+  }, [settings.activeCategories]);
+
+  const [activeCategory, setActiveCategory] = useState<WordCategory>(() => allowedCategories[0]);
+
+  useEffect(() => {
+    setActiveCategory(prev =>
+      allowedCategories.includes(prev) ? prev : allowedCategories[0]
+    );
+  }, [allowedCategories]);
 
   const lemmas = getLemmasByCategory(activeCategory);
 
@@ -58,7 +70,7 @@ export function LearnScreen() {
       <div className="bg-slate-900 border-b border-slate-800 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white">&larr; Home</button>
+            <button onClick={() => navigate('/home')} className="text-slate-400 hover:text-white">&larr; Home</button>
             <div>
               <h1 className="text-xl font-bold text-white">📋 Learn Table</h1>
               <p className="text-slate-400 text-xs">Russian Case Declensions</p>
@@ -76,7 +88,7 @@ export function LearnScreen() {
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         {/* Category Tabs */}
         <div className="flex gap-2">
-          {(['pronoun', 'name', 'noun'] as WordCategory[]).map(cat => {
+          {allowedCategories.map(cat => {
             const info = CATEGORY_LABELS[cat];
             const isActive = activeCategory === cat;
             return (
@@ -272,6 +284,14 @@ export function LearnScreen() {
               {selectedForm.notes && (
                 <p className="text-slate-400 text-sm">
                   Note: {selectedForm.notes}
+                </p>
+              )}
+              {selectedForm.postPrepositionForm && selectedForm.postPrepositionForm !== selectedForm.surfaceForm && (
+                <p className="text-slate-400 text-sm">
+                  After prepositions: <span className="text-yellow-300 font-semibold">{selectedForm.postPrepositionForm}</span>
+                  {selectedForm.postPrepositionVariants && selectedForm.postPrepositionVariants.length > 0 && (
+                    <span className="text-slate-500"> ({selectedForm.postPrepositionVariants.join(', ')})</span>
+                  )}
                 </p>
               )}
               {selectedForm.acceptedVariants && selectedForm.acceptedVariants.length > 1 && (

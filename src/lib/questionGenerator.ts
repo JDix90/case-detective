@@ -107,12 +107,26 @@ function generateDynamicQuestion(
   if (frames.length === 0) return null;
   const frame = frames[Math.floor(Math.random() * frames.length)];
 
+  const usePostPrep = frame.requiresPreposition && !!targetForm.postPrepositionForm;
+  const correctAnswer = usePostPrep ? targetForm.postPrepositionForm! : targetForm.surfaceForm;
+  const acceptedAnswers = usePostPrep
+    ? [targetForm.postPrepositionForm!, ...(targetForm.postPrepositionVariants ?? [])]
+    : targetForm.acceptedVariants;
+
   const distractors = generateDistractors(targetForm, categoryForms, 3);
+
+  if (usePostPrep && targetForm.surfaceForm !== targetForm.postPrepositionForm) {
+    distractors.unshift(targetForm.surfaceForm);
+    const unique = [...new Set(distractors)].filter(d => d !== correctAnswer);
+    distractors.length = 0;
+    distractors.push(...unique);
+  }
+
   if (distractors.length < 2) return null;
 
   while (distractors.length < 3) {
     const filler = categoryForms.filter(
-      f => f.surfaceForm !== targetForm!.surfaceForm && !distractors.includes(f.surfaceForm)
+      f => f.surfaceForm !== correctAnswer && !distractors.includes(f.surfaceForm)
     );
     if (filler.length === 0) break;
     distractors.push(filler[Math.floor(Math.random() * filler.length)].surfaceForm);
@@ -130,12 +144,14 @@ function generateDynamicQuestion(
     targetMeaning: targetForm.englishGloss,
     helperWord: frame.helperWord,
     questionPrompt: frame.questionPrompt,
-    correctAnswer: targetForm.surfaceForm,
-    acceptedAnswers: targetForm.acceptedVariants,
+    correctAnswer,
+    acceptedAnswers,
     distractors,
-    explanation: `${frame.explanation} ${targetForm.lemmaDisplay} → ${targetForm.surfaceForm} (${targetForm.caseId}).`,
+    explanation: usePostPrep
+      ? `${frame.explanation} After a preposition: ${targetForm.lemmaDisplay} → ${correctAnswer} (${targetForm.caseId}).`
+      : `${frame.explanation} ${targetForm.lemmaDisplay} → ${correctAnswer} (${targetForm.caseId}).`,
     difficulty,
-    tags: [targetForm.category, targetForm.caseId, targetForm.lemmaId],
+    tags: [targetForm.category, targetForm.caseId, targetForm.lemmaId, ...(usePostPrep ? ['n_prefix'] : [])],
   };
 
   const allChoices = shuffle([template.correctAnswer, ...distractors.slice(0, 3)]);

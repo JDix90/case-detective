@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../store/gameStore';
 import { caseMetadata, caseOrder } from '../../data/caseMetadata';
@@ -25,15 +25,31 @@ const CYRILLIC_ROWS = [
 
 export function GridScreen() {
   const navigate = useNavigate();
-  const { adaptiveQueue, setAdaptiveQueue, addSessionSummary } = useGameStore();
+  const { adaptiveQueue, setAdaptiveQueue, addSessionSummary, settings } = useGameStore();
+
+  const allowedCategories = useMemo(() => {
+    const a = settings.activeCategories;
+    return a.length > 0 ? a : (['pronoun'] as WordCategory[]);
+  }, [settings.activeCategories]);
 
   const [phase, setPhase] = useState<'setup' | 'playing' | 'complete'>('setup');
   const [inputMode, setInputMode] = useState<InputMode>('keyboard');
-  const [activeCategory, setActiveCategory] = useState<WordCategory>('pronoun');
+  const [activeCategory, setActiveCategory] = useState<WordCategory>(() => allowedCategories[0]);
   const [selectedCases, setSelectedCases] = useState<CaseId[]>([...caseOrder]);
   const [selectedLemmaIds, setSelectedLemmaIds] = useState<string[]>(() =>
-    getLemmasByCategory('pronoun').map(l => l.lemmaId)
+    getLemmasByCategory(allowedCategories[0]).map(l => l.lemmaId)
   );
+
+  useEffect(() => {
+    setActiveCategory(prev =>
+      allowedCategories.includes(prev) ? prev : allowedCategories[0]
+    );
+  }, [allowedCategories]);
+
+  useEffect(() => {
+    const lemmas = getLemmasByCategory(activeCategory);
+    setSelectedLemmaIds(lemmas.map(l => l.lemmaId));
+  }, [activeCategory]);
   const [cells, setCells] = useState<Record<string, GridCell>>({});
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const [hintsLeft, setHintsLeft] = useState(3);
@@ -57,8 +73,6 @@ export function GridScreen() {
 
   const handleCategoryChange = (cat: WordCategory) => {
     setActiveCategory(cat);
-    const lemmas = getLemmasByCategory(cat);
-    setSelectedLemmaIds(lemmas.map(l => l.lemmaId));
   };
 
   const handleStart = () => {
@@ -216,7 +230,7 @@ export function GridScreen() {
           <div>
             <label className="text-slate-300 text-sm font-semibold block mb-2">Word Category</label>
             <div className="flex gap-2">
-              {(['pronoun', 'name', 'noun'] as WordCategory[]).map(cat => {
+              {allowedCategories.map(cat => {
                 const info = CATEGORY_LABELS[cat];
                 return (
                   <button
@@ -334,7 +348,7 @@ export function GridScreen() {
           )}
         </div>
         <div className="flex gap-3">
-          <button onClick={() => navigate('/')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold">Home</button>
+          <button onClick={() => navigate('/home')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold">Home</button>
           <button onClick={() => setPhase('setup')} className="px-6 py-3 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-semibold">Try Again</button>
           <button onClick={() => navigate('/practice')} className="px-6 py-3 bg-green-700 hover:bg-green-600 text-white rounded-xl font-semibold">Practice Weak Forms</button>
         </div>
@@ -347,7 +361,7 @@ export function GridScreen() {
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex-shrink-0">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white">✕</button>
+            <button onClick={() => navigate('/home')} className="text-slate-400 hover:text-white">✕</button>
             <span className="text-white font-bold">🔲 Grid Challenge</span>
           </div>
           <div className="flex items-center gap-3">

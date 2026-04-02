@@ -24,7 +24,7 @@ export function ResultsScreen() {
   const summary = location.state?.summary as SessionSummary | undefined;
 
   useEffect(() => {
-    if (!summary) navigate('/');
+    if (!summary) navigate('/home');
   }, [summary, navigate]);
 
   if (!summary) return null;
@@ -106,7 +106,7 @@ export function ResultsScreen() {
           Play Again
         </button>
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/home')}
           className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition-colors"
         >
           Home

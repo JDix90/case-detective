@@ -1,7 +1,25 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../store/gameStore';
+import { useAuth } from '../../contexts/AuthContext';
+import { useEffectiveRole } from '../../lib/authRoles';
+import { supabase } from '../../lib/supabase';
 import { getTotalFormCount, CATEGORY_LABELS } from '../../data/allForms';
+import { computeDueReviewCount } from '../../lib/adaptiveEngine';
 import type { WordCategory } from '../../types';
+
+interface ClassMembership {
+  id: string;
+  name: string;
+}
+
+interface AssignmentPreview {
+  id: string;
+  title: string;
+  due_date: string | null;
+  class_name: string;
+  mode_id: string;
+}
 
 const modes = [
   {
@@ -63,11 +81,66 @@ const modes = [
 export function HomeScreen() {
   const navigate = useNavigate();
   const { masteryRecords, sessionHistory, settings, toggleCategory } = useGameStore();
+  const { profile } = useAuth();
+  const effectiveRole = useEffectiveRole();
+
+  const [myClasses, setMyClasses] = useState<ClassMembership[]>([]);
+  const [pendingAssignments, setPendingAssignments] = useState<AssignmentPreview[]>([]);
+
+  useEffect(() => {
+    if (!profile || effectiveRole !== 'student') return;
+
+    const loadStudentData = async () => {
+      const { data: memberships } = await supabase
+        .from('class_memberships')
+        .select('class_id')
+        .eq('student_id', profile.id);
+
+      const classIds = (memberships ?? []).map(m => m.class_id);
+      if (classIds.length === 0) return;
+
+      const { data: classes } = await supabase
+        .from('classes')
+        .select('id, name')
+        .in('id', classIds);
+      setMyClasses(classes ?? []);
+      const classMap = Object.fromEntries((classes ?? []).map(c => [c.id, c.name]));
+
+      const { data: assigns } = await supabase
+        .from('assignments')
+        .select('id, title, due_date, class_id, mode_id')
+        .in('class_id', classIds)
+        .order('due_date', { ascending: true });
+
+      if (!assigns || assigns.length === 0) return;
+
+      const assignIds = assigns.map(a => a.id);
+      const { data: completions } = await supabase
+        .from('assignment_completions')
+        .select('assignment_id')
+        .eq('student_id', profile.id)
+        .in('assignment_id', assignIds);
+      const completedSet = new Set((completions ?? []).map(c => c.assignment_id));
+
+      setPendingAssignments(
+        assigns.filter(a => !completedSet.has(a.id)).map(a => ({
+          id: a.id,
+          title: a.title,
+          due_date: a.due_date,
+          class_name: classMap[a.class_id] ?? '',
+          mode_id: a.mode_id,
+        }))
+      );
+    };
+
+    loadStudentData();
+  }, [profile, effectiveRole]);
 
   const totalAttempts = Object.values(masteryRecords).reduce((s, r) => s + r.attempts, 0);
   const masteredCount = Object.values(masteryRecords).filter(r => r.status === 'mastered').length;
   const totalForms = getTotalFormCount(settings.activeCategories);
   const recentSession = sessionHistory[0];
+  const dueCount = computeDueReviewCount(masteryRecords, settings.activeCategories);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -128,6 +201,81 @@ export function HomeScreen() {
             <p className="text-slate-400 text-xs mt-1">Last Accuracy</p>
           </div>
         </div>
+
+        {/* Review Due Indicator */}
+        {dueCount > 0 && (
+          <button
+            onClick={() => navigate('/practice')}
+            className="w-full flex items-center justify-between bg-amber-950 hover:bg-amber-900 border border-amber-700 rounded-2xl px-5 py-4 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔔</span>
+              <div className="text-left">
+                <p className="text-amber-200 font-bold text-sm">
+                  {dueCount} {dueCount === 1 ? 'form' : 'forms'} due for review
+                </p>
+                <p className="text-amber-400/70 text-xs">Practice now to keep your memory fresh</p>
+              </div>
+            </div>
+            <span className="text-amber-300 font-semibold text-sm">Practice &rarr;</span>
+          </button>
+        )}
+
+        {/* Assignments Due (students only) */}
+        {pendingAssignments.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wider">
+                Assignments Due
+              </h2>
+              <button onClick={() => navigate('/assignments')} className="text-blue-400 hover:text-blue-300 text-xs font-semibold">
+                View All
+              </button>
+            </div>
+            <div className="space-y-2">
+              {pendingAssignments.slice(0, 3).map(a => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between bg-indigo-950 border border-indigo-800 rounded-xl px-4 py-3"
+                >
+                  <div>
+                    <p className="text-white text-sm font-medium">{a.title}</p>
+                    <p className="text-indigo-400 text-xs">{a.class_name}</p>
+                  </div>
+                  {a.due_date && (
+                    <span className="text-amber-300 text-xs font-semibold">
+                      Due {new Date(a.due_date).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* My Classes (students only) */}
+        {myClasses.length > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-slate-500 text-xs">Classes:</span>
+            {myClasses.map(c => (
+              <span key={c.id} className="bg-slate-800 text-slate-300 text-xs px-3 py-1 rounded-lg border border-slate-700">
+                {c.name}
+              </span>
+            ))}
+            <button onClick={() => navigate('/join-class')} className="text-blue-400 hover:text-blue-300 text-xs font-semibold">
+              + Join
+            </button>
+          </div>
+        )}
+
+        {effectiveRole === 'student' && myClasses.length === 0 && (
+          <button
+            onClick={() => navigate('/join-class')}
+            className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 hover:border-blue-500 rounded-2xl px-5 py-4 transition-colors text-slate-400 hover:text-blue-400 text-sm font-semibold"
+          >
+            🏫 Join a Class
+          </button>
+        )}
 
         {/* Mode Grid */}
         <div>

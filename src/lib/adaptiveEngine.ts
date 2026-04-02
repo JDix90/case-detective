@@ -2,8 +2,10 @@ import type {
   MasteryRecord,
   AdaptiveReviewQueueItem,
   SessionAnswerEvent,
+  WordCategory,
 } from '../types';
 import { confusionPairs } from '../data/confusionPairs';
+import { getForm } from '../data/allForms';
 import {
   ADAPTIVE_FAST_THRESHOLD_MS,
   ADAPTIVE_SLOW_THRESHOLD_MS,
@@ -194,6 +196,31 @@ export function advanceQueue(queue: AdaptiveReviewQueueItem[]): AdaptiveReviewQu
   }));
 }
 
+export function computeTimeSinceHours(lastSeenAt: string): number {
+  const ms = Date.now() - new Date(lastSeenAt).getTime();
+  return Math.max(0, ms / (1000 * 60 * 60));
+}
+
+function computeTimeDecayBonus(hours: number): number {
+  if (hours <= 1) return 0;
+  if (hours <= 6) return 5;
+  if (hours <= 24) return 15;
+  if (hours <= 72) return 30;
+  if (hours <= 168) return 50;
+  return 70;
+}
+
+function statusDecayMultiplier(status: MasteryRecord['status']): number {
+  switch (status) {
+    case 'mastered': return 0.3;
+    case 'strong': return 0.5;
+    case 'improving': return 0.8;
+    case 'shaky': return 1.0;
+    case 'introduced': return 1.2;
+    default: return 0;
+  }
+}
+
 export function computeEffectivePriority(
   item: AdaptiveReviewQueueItem,
   masteryRecord: MasteryRecord | undefined,
@@ -215,6 +242,13 @@ export function computeEffectivePriority(
       masteryRecord.status === 'introduced' ? 15 :
       masteryRecord.status === 'improving' ? 8 : 0;
     priority += gapBonus;
+
+    // Time-decay bonus
+    if (masteryRecord.status !== 'unseen') {
+      const hours = computeTimeSinceHours(masteryRecord.lastSeenAt);
+      const rawBonus = computeTimeDecayBonus(hours);
+      priority += Math.round(rawBonus * statusDecayMultiplier(masteryRecord.status));
+    }
   }
 
   // Confusion bonus
@@ -238,11 +272,20 @@ export function selectNextAdaptiveFormKey(
   queue: AdaptiveReviewQueueItem[],
   masteryRecords: Record<string, MasteryRecord>,
   recentFormKeys: string[],
-  confusionCounts: Record<string, number>
+  confusionCounts: Record<string, number>,
+  activeCategories?: WordCategory[]
 ): string | null {
-  const eligible = queue.filter(
+  let eligible = queue.filter(
     item => item.questionsSinceEnqueue >= item.scheduledAfterQuestions
   );
+
+  if (activeCategories && activeCategories.length > 0) {
+    eligible = eligible.filter(item => {
+      const [lemmaId, caseId] = item.formKey.split(':');
+      const form = getForm(lemmaId, caseId);
+      return form ? activeCategories.includes(form.category) : false;
+    });
+  }
 
   if (eligible.length === 0) return null;
 
@@ -319,4 +362,108 @@ export function enqueueFromGridResults(
   }
 
   return newQueue;
+}
+
+// ─── Spaced Repetition ──────────────────────────────────────────────────────
+
+export function getStaleFormKeys(
+  masteryRecords: Record<string, MasteryRecord>,
+  thresholdHours: number
+): string[] {
+  const stale: string[] = [];
+  for (const record of Object.values(masteryRecords)) {
+    if (record.status === 'unseen') continue;
+    const hours = computeTimeSinceHours(record.lastSeenAt);
+    if (hours >= thresholdHours) {
+      stale.push(record.formKey);
+    }
+  }
+  return stale;
+}
+
+export function enqueueStaleReviews(
+  queue: AdaptiveReviewQueueItem[],
+  masteryRecords: Record<string, MasteryRecord>
+): AdaptiveReviewQueueItem[] {
+  let newQueue = [...queue];
+
+  for (const record of Object.values(masteryRecords)) {
+    if (record.status === 'unseen') continue;
+
+    const hours = computeTimeSinceHours(record.lastSeenAt);
+    let shouldEnqueue = false;
+    let priority = 0;
+
+    if (record.status === 'introduced' || record.status === 'shaky') {
+      if (hours >= 24) {
+        shouldEnqueue = true;
+        priority = Math.min(60, 30 + Math.floor(hours / 24) * 10);
+      }
+    } else if (record.status === 'improving') {
+      if (hours >= 48) {
+        shouldEnqueue = true;
+        priority = Math.min(50, 25 + Math.floor(hours / 24) * 5);
+      }
+    } else if (record.status === 'strong') {
+      if (hours >= 72) {
+        shouldEnqueue = true;
+        priority = Math.min(40, 20 + Math.floor(hours / 48) * 5);
+      }
+    } else if (record.status === 'mastered') {
+      if (hours >= 168) {
+        shouldEnqueue = true;
+        priority = Math.min(30, 15 + Math.floor(hours / 168) * 5);
+      }
+    }
+
+    if (shouldEnqueue) {
+      newQueue = addOrUpdateQueueItem(newQueue, {
+        formKey: record.formKey,
+        priorityScore: priority,
+        scheduledAfterQuestions: 0,
+        questionsSinceEnqueue: 0,
+        source: 'stale_review',
+      });
+    }
+  }
+
+  if (newQueue.length > ADAPTIVE_QUEUE_MAX_SIZE * 2) {
+    newQueue.sort((a, b) => b.priorityScore - a.priorityScore);
+    newQueue = newQueue.slice(0, ADAPTIVE_QUEUE_MAX_SIZE * 2);
+  }
+
+  return newQueue;
+}
+
+export function computeDueReviewCount(
+  masteryRecords: Record<string, MasteryRecord>,
+  activeCategories?: WordCategory[]
+): number {
+  let count = 0;
+  for (const record of Object.values(masteryRecords)) {
+    if (record.status === 'unseen') continue;
+    if (activeCategories && activeCategories.length > 0) {
+      const [lemmaId, caseId] = record.formKey.split(':');
+      const form = getForm(lemmaId, caseId);
+      if (!form || !activeCategories.includes(form.category)) continue;
+    }
+    const hours = computeTimeSinceHours(record.lastSeenAt);
+
+    switch (record.status) {
+      case 'introduced':
+      case 'shaky':
+        if (hours >= 24) count++;
+        break;
+      case 'improving':
+        if (hours >= 48) count++;
+        break;
+      case 'strong':
+        if (hours >= 72) count++;
+        break;
+      case 'mastered':
+        if (hours >= 168) count++;
+        break;
+    }
+  }
+  return count;
 }

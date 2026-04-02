@@ -64,11 +64,27 @@ function generateCards(matchType: MatchType, count: number, categories: WordCate
 
 export function MemoryScreen() {
   const navigate = useNavigate();
-  const { addSessionSummary } = useGameStore();
+  const { addSessionSummary, settings } = useGameStore();
+
+  /** Categories for this mode only — does not change Home filters. Initialized from Home selection. */
+  const [selectedCategories, setSelectedCategories] = useState<WordCategory[]>(() => {
+    const a = settings.activeCategories;
+    return a.length > 0 ? [...a] : (['pronoun'] as WordCategory[]);
+  });
+
+  const sessionCategoriesRef = useRef<WordCategory[]>(selectedCategories);
+
+  const toggleMemoryCategory = (cat: WordCategory) => {
+    setSelectedCategories(prev => {
+      if (prev.includes(cat)) {
+        return prev.length > 1 ? prev.filter(c => c !== cat) : prev;
+      }
+      return [...prev, cat];
+    });
+  };
 
   const [matchType, setMatchType] = useState<MatchType>('pronoun_form');
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
-  const [selectedCategories, setSelectedCategories] = useState<WordCategory[]>(['pronoun']);
   const [phase, setPhase] = useState<'setup' | 'playing' | 'complete'>('setup');
   const [cards, setCards] = useState<CardWithState[]>([]);
   const [flipped, setFlipped] = useState<string[]>([]);
@@ -85,16 +101,8 @@ export function MemoryScreen() {
   const scoreRef = useRef(0);
   const movesRef = useRef(0);
 
-  const toggleCategory = (cat: WordCategory) => {
-    setSelectedCategories(prev => {
-      if (prev.includes(cat)) {
-        return prev.length > 1 ? prev.filter(c => c !== cat) : prev;
-      }
-      return [...prev, cat];
-    });
-  };
-
   const handleStart = () => {
+    sessionCategoriesRef.current = [...selectedCategories];
     const count = GRID_SIZES[difficulty];
     const rawCards = generateCards(matchType, count, selectedCategories);
     setCards(rawCards.map(c => ({ ...c, state: 'hidden' })));
@@ -171,7 +179,7 @@ export function MemoryScreen() {
               weakForms: [],
               confusionPairsHit: [],
               completedAt: new Date().toISOString(),
-              categories: selectedCategories,
+              categories: sessionCategoriesRef.current,
             };
             addSessionSummary(summary);
             setPhase('complete');
@@ -207,7 +215,10 @@ export function MemoryScreen() {
         <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 w-full max-w-sm space-y-5">
           {/* Category selector */}
           <div>
-            <label className="text-slate-300 text-sm font-semibold block mb-2">Word Categories</label>
+            <label className="text-slate-300 text-sm font-semibold block mb-1">Word Categories</label>
+            <p className="text-slate-500 text-xs mb-2 leading-relaxed">
+              Only affects this game. Home filters stay unchanged.
+            </p>
             <div className="flex gap-2">
               {(['pronoun', 'name', 'noun'] as WordCategory[]).map(cat => {
                 const info = CATEGORY_LABELS[cat];
@@ -215,7 +226,8 @@ export function MemoryScreen() {
                 return (
                   <button
                     key={cat}
-                    onClick={() => toggleCategory(cat)}
+                    type="button"
+                    onClick={() => toggleMemoryCategory(cat)}
                     className={`flex-1 py-2 rounded-xl font-semibold text-sm transition-colors ${active ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
                   >
                     {info.icon} {info.label}
@@ -300,7 +312,7 @@ export function MemoryScreen() {
           </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => navigate('/')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold">Home</button>
+          <button onClick={() => navigate('/home')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold">Home</button>
           <button onClick={() => setPhase('setup')} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-semibold">Play Again</button>
         </div>
       </div>
@@ -312,7 +324,7 @@ export function MemoryScreen() {
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white">✕</button>
+            <button onClick={() => navigate('/home')} className="text-slate-400 hover:text-white">✕</button>
             <span className="text-white font-bold">🃏 Memory Match</span>
           </div>
           <div className="flex items-center gap-4 text-sm">
