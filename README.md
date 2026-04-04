@@ -71,7 +71,7 @@ Earlier migrations define profiles, classes, memberships, assignments, and admin
 
 ## Student navigation (support)
 
-- After sign-in, **students with at least one class** land on **`/class/:classId`** (class workspace with sidebar).
+- Visiting **`/`** while signed out shows the **marketing landing** (sample question + mode previews); **Sign in** / **Create account** go to `/login` and `/signup`. After sign-in, **students with at least one class** land on **`/class/:classId`** (class workspace with sidebar).
 - **`/home`** is the **Overview** dashboard: stats, mode grid, and cross-class shortcuts; use the sidebar link “Overview” to open it. The selected class for the sidebar and default scoped routes is stored under `cd_student_sidebar_class` (see [`docs/localStorage-keys.md`](docs/localStorage-keys.md)).
 
 ---
@@ -130,6 +130,7 @@ tests/e2e/                # Playwright smoke tests
 
 ## Documentation
 
+- [`Planning.md`](Planning.md) — plain-English app overview for humans and AI (feature planning context)
 - [`docs/ADR-001-curriculum-mastery.md`](docs/ADR-001-curriculum-mastery.md) — curriculum URLs and mastery keys
 - [`docs/curriculum-lock-policy.md`](docs/curriculum-lock-policy.md) — optional `lock_policy` JSON for teachers
 - [`docs/localStorage-keys.md`](docs/localStorage-keys.md) — `cd_*` client keys

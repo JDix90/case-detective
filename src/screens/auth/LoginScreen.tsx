@@ -1,15 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { SUPABASE_SETUP_MESSAGE } from '../../lib/supabase';
 
 export function LoginScreen() {
   const navigate = useNavigate();
-  const { signIn, supabaseConfigured } = useAuth();
+  const { signIn, supabaseConfigured, profile, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!loading && profile) {
+      navigate('/', { replace: true });
+    }
+  }, [loading, profile, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,16 +28,19 @@ export function LoginScreen() {
     if (err) {
       setError(err);
     } else {
-      navigate('/');
+      navigate('/', { replace: true });
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-8">
-        <div className="text-center">
+        <div className="text-center space-y-2">
           <h1 className="text-3xl font-bold text-white tracking-tight mb-1">Strand</h1>
           <p className="text-slate-400 text-sm mt-1">Sign in to continue</p>
+          <Link to="/" className="text-slate-500 text-sm hover:text-slate-300 inline-block">
+            ← Back to home
+          </Link>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-slate-800 rounded-2xl border border-slate-700 p-6 space-y-4">

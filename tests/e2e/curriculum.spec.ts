@@ -5,6 +5,12 @@ import { test, expect } from '@playwright/test';
  * with test credentials and extend tests with storageState.
  */
 test.describe('curriculum shell (unauthenticated)', () => {
+  test('landing page is public and shows sample practice', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: /master russian cases/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /sample practice question/i })).toBeVisible();
+  });
+
   test('login page shows app branding', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: /^strand$/i })).toBeVisible();

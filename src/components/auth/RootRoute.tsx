@@ -1,8 +1,12 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { LandingScreen } from '../../screens/landing/LandingScreen';
 import { StudentEntryRoute } from './StudentEntryRoute';
 
-export function RoleRedirect() {
+/**
+ * `/` — public marketing landing for guests; same role redirects as before when signed in.
+ */
+export function RootRoute() {
   const { profile, loading } = useAuth();
 
   if (loading) {
@@ -14,7 +18,7 @@ export function RoleRedirect() {
   }
 
   if (!profile) {
-    return <Navigate to="/login" replace />;
+    return <LandingScreen />;
   }
 
   if (profile.role === 'admin') {

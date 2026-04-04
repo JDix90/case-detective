@@ -3,7 +3,7 @@ import { Suspense, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CurriculumProvider } from './contexts/CurriculumContext';
 import { RequireAuth } from './components/auth/RequireAuth';
-import { RoleRedirect } from './components/auth/RoleRedirect';
+import { RootRoute } from './components/auth/RootRoute';
 import { AdminRoleBar } from './components/admin/AdminRoleBar';
 import { useGameStore } from './store/gameStore';
 import { SyncToastHost } from './components/ui/SyncToastHost';
@@ -77,8 +77,8 @@ function AppRoutes() {
           <Route path="/login" element={<LoginScreen />} />
           <Route path="/signup" element={<SignUpScreen />} />
 
-          {/* Role-based redirect at root */}
-          <Route path="/" element={<RoleRedirect />} />
+          {/* Landing for guests; role-based redirect when signed in */}
+          <Route path="/" element={<RootRoute />} />
 
           {/* Student / shared game routes */}
           <Route path="/home" element={<RequireAuth><StudentHomeLayout /></RequireAuth>}>

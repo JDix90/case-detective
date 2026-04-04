@@ -136,13 +136,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        loadProfile(s.user.id, s.user.email ?? '');
+        // After sign-in, profile loads async; keep `loading` true until it arrives so
+        // RootRoute / RequireAuth don't treat the user as logged-out and bounce to /login.
+        if (event === 'SIGNED_IN') {
+          setLoading(true);
+        }
+        void loadProfile(s.user.id, s.user.email ?? '').finally(() => {
+          if (event === 'SIGNED_IN') {
+            setLoading(false);
+          }
+        });
       } else {
         setProfile(null);
+        setLoading(false);
       }
     });
 
